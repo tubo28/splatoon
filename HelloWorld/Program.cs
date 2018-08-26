@@ -65,56 +65,54 @@ namespace HelloWorld
                 return 1.0 * nume / den;
             }
 
-            public Tuple<long, long> FindMatchBoundary(VideoCapture video, long framePosMsec)
+            public Tuple<TimeSpan, TimeSpan> FindMatchBoundary(VideoCapture video, TimeSpan pos)
             {
-                return Tuple.Create(FindMatchStart(video, framePosMsec), FindMatchEnd(video, framePosMsec));
+                return Tuple.Create(FindMatchStart(video, pos), FindMatchEnd(video, pos));
             }
 
             static Mat searchFrame = new Mat();
             static Mat searchBinFrame = new Mat();
 
-            private long FindMatchStart(VideoCapture video, long fromPosMsec)
+            private TimeSpan FindMatchStart(VideoCapture video, TimeSpan from)
             {
-                var m = fromPosMsec;
+                var m = from;
                 while (true)
                 {
-                    var tryMsec = m - babyStep;
-                    if (tryMsec < 0)
+                    var tryTime = m - babyStep;
+                    if (tryTime < TimeSpan.Zero)
                     {
                         break;
                     }
 
-                    GetFrameByMsec(video, tryMsec, searchFrame);
+                    GetFrame(video, tryTime, searchFrame);
                     Binarize(searchFrame, 7, searchBinFrame);
                     if (!Match(searchBinFrame))
                     {
                         break;
                     }
-                    Console.WriteLine($"match starts at {video.Get(CaptureProperty.PosFrames)} frm");
-                    m = tryMsec;
+                    m = tryTime;
                 }
                 return m;
             }
 
-            private long FindMatchEnd(VideoCapture video, long fromPosMsec)
+            private TimeSpan FindMatchEnd(VideoCapture video, TimeSpan from)
             {
-                var m = fromPosMsec;
+                var m = from;
                 while (true)
                 {
-                    var tryMsec = m + babyStep;
-                    if (tryMsec >= video.Fps * video.FrameCount)
+                    var tryTime = m + babyStep;
+                    if (tryTime >= TimeSpan.FromSeconds(video.FrameCount/ video.Fps))
                     {
                         break;
                     }
 
-                    GetFrameByMsec(video, tryMsec, searchFrame);
+                    GetFrame(video, tryTime, searchFrame);
                     Binarize(searchFrame, 7, searchBinFrame);
                     if (!Match(searchBinFrame))
                     {
                         break;
                     }
-                    Console.WriteLine($"match ends at   {video.Get(CaptureProperty.PosFrames)} frm");
-                    m = tryMsec;
+                    m = tryTime;
                 }
                 return m;
             }
@@ -123,8 +121,8 @@ namespace HelloWorld
         static Template GameStartTemplate = null;
         static Template GameEndTemlate = null;
 
-        static long babyStep = 200;
-        static long giantStep = 2500;
+        static TimeSpan babyStep = TimeSpan.FromMilliseconds(250);
+        static TimeSpan giantStep = TimeSpan.FromMilliseconds(2000);
 
         static void Main(string[] args)
         {
@@ -133,6 +131,7 @@ namespace HelloWorld
 
             if (false)
             {
+                /*
                 var sw = new Stopwatch();
                 sw.Start();
                 var file = @"2018030321470048.mp4";
@@ -160,6 +159,7 @@ namespace HelloWorld
                     Binarize(mat, 3, bin);
                     Cv2.ImWrite($"bin_{frame}.png", bin);
                 }
+                */
             }
             else
             {
@@ -170,14 +170,17 @@ namespace HelloWorld
 
                 var srcFrame = new Mat();
                 var binFrame = new Mat();
-                
-                var posMsec = 0L;
+
+                var list = new System.Collections.Generic.List<Tuple<TimeSpan, TimeSpan>>();
+
+                var s = new TimeSpan();
+                var pos = TimeSpan.Zero;
+
                 while (true)
                 {
-                    
-                    var nextPosMsec = posMsec + giantStep;
+                    var nextPos = pos + giantStep;
 
-                    GetFrameByMsec(video, posMsec, srcFrame);
+                    GetFrame(video, pos, srcFrame);
                     if (srcFrame.Empty())
                     {
                         break;
@@ -186,29 +189,37 @@ namespace HelloWorld
                     Binarize(srcFrame, 7, binFrame);
                     if (GameStartTemplate.Match(binFrame))
                     {
-                        var se = GameStartTemplate.FindMatchBoundary(video, posMsec);
+                        var se = GameStartTemplate.FindMatchBoundary(video, pos);
                         var start = se.Item1;
                         var end = se.Item2;
-                        Console.WriteLine($"{start:0000000}ms: match starts");
-                        nextPosMsec = end + babyStep;
+                        Console.WriteLine($"{start}: game starts");
+                        Console.WriteLine(sw.Elapsed);
+                        nextPos = end + babyStep;
+                        s = start;
                     }
                     else if (GameEndTemlate.Match(binFrame))
                     {
-                        var se = GameEndTemlate.FindMatchBoundary(video, posMsec);
+                        var se = GameEndTemlate.FindMatchBoundary(video, pos);
                         var end = se.Item2;
-                        Console.WriteLine($"{end:0000000}ms: match ends");
-                        nextPosMsec = end + babyStep;
+                        Console.WriteLine($"${end}: game ends");
+                        Console.WriteLine(sw.Elapsed);
+                        nextPos = end + babyStep;
+                        list.Add(Tuple.Create(s, end));
+                        Console.WriteLine($"{s} -> ${end}");
+                        s = new TimeSpan();
                     }
-                    posMsec = nextPosMsec;
+                    pos = nextPos;
                 }
+
+                list.ForEach(x => Console.WriteLine(x));
+
+                Console.WriteLine(sw.Elapsed);
             }
         }
 
-       
-
-        static void GetFrameByMsec(VideoCapture video, long ms, Mat res)
+        static void GetFrame(VideoCapture video, TimeSpan pos, Mat res)
         {
-            video.Set(CaptureProperty.PosMsec, ms);
+            video.Set(CaptureProperty.PosMsec, pos.TotalMilliseconds);
             video.Read(res);
         }
 
